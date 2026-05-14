@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOM MID — Gerador Semântico</title>
+<link rel="stylesheet" href="css/gerador.css">
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div class="logo">GERADOR SEMANTICO</div>
+  <p class="tagline">Gerador Semântico de MIDI</p>
+
+  <!-- Barra de status da chave API -->
+  <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap;">
+    <span id="api-key-status" style="font-size:12px;"></span>
+    <button onclick="window.groqClearKey && window.groqClearKey()"
+      style="font-size:11px;background:transparent;border:1px solid #333;
+             color:#666;border-radius:4px;padding:4px 10px;cursor:pointer;">
+      🔑 Trocar chave
+    </button>
+  </div>
+</header>
+
+<!-- Lê o localStorage e exibe status inicial antes do módulo ES carregar -->
+<script>
+  (function () {
+    const key = localStorage.getItem('groq_api_key');
+    const el  = document.getElementById('api-key-status');
+    if (!el) return;
+    if (key) {
+      el.textContent = `✓ Chave configurada (${key.slice(0, 8)}…)`;
+      el.style.color = '#4ade80';
+    } else {
+      el.textContent = '⚠ Chave Groq não configurada — será solicitada ao gerar';
+      el.style.color = '#f87171';
+    }
+  })();
+</script>
+
+  <!-- CARD 1: GERADOR PRINCIPAL -->
+  <div class="card card-primary">
+    <div class="section-title">🎼 Gerador por Descrição</div>
+
+    <label>Descreva o som que você quer</label>
+    <textarea id="prompt" placeholder="Ex: melodia melancólica de piano em sol menor, tempo lento como chuva caindo, notas longas que se dissolvem no silêncio..."></textarea>
+
+    <div class="params">
+      <div class="param-group">
+        <label>Instrumento</label>
+        <select id="instrument">
+          <option value="0">Piano Acústico</option>
+          <option value="25">Violão</option>
+          <option value="40">Violino</option>
+          <option value="56">Trompete</option>
+          <option value="73">Flauta</option>
+          <option value="33">Baixo Elétrico</option>
+          <option value="48">Cordas</option>
+          <option value="52">Coro/Vozes</option>
+          <option value="80">Lead Synth</option>
+          <option value="88">Pad Synth</option>
+          <option value="19">Órgão</option>
+          <option value="24">Guitarra Acústica</option>
+        </select>
+      </div>
+      <div class="param-group">
+        <label>Andamento (BPM)</label>
+        <div class="range-wrap">
+          <input type="range" id="tempo" min="40" max="200" value="90">
+          <span class="range-val" id="tempo-val">90</span>
+        </div>
+      </div>
+      <div class="param-group">
+        <label>Duração (seg)</label>
+        <div class="range-wrap">
+          <input type="range" id="duration" min="5" max="60" value="15">
+          <span class="range-val" id="duration-val">15</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-main btn-primary" id="btn-gen" onclick="generateFromPrompt()">GERAR MIDI</button>
+    </div>
+
+    <!-- PAINEL DE PARÂMETROS DA IA -->
+    <div id="ai-params-panel" style="display:none"></div>
+
+    <div class="status-bar" id="status-gen"></div>
+
+	<div class="result-section" id="result-gen">
+	  <div class="result-header">
+		<span class="result-label">▸ resultado gerado</span>
+		<a id="dl-gen" class="btn-dl btn-dl-primary" download="som-mid.mid">⬇ download midi</a>
+	  </div>
+	  <canvas class="piano-roll" id="canvas-gen"></canvas>
+
+	  <!-- PLAYER -->
+	  <div class="player-bar">
+		<button class="btn-play" id="btn-play-gen"   onclick="playerToggle('gen')">▶</button>
+		<button class="btn-stop-play"                onclick="playerStop('gen')">■</button>
+		<div class="player-seek-wrap" id="seek-gen"  onclick="playerSeek('gen', event)">
+		  <div class="player-seek-fill" id="fill-gen"></div>
+		</div>
+		<span class="player-time" id="time-gen">0:00</span>
+		<div class="player-vol">
+		  <span class="player-vol-icon">🔊</span>
+		  <input type="range" min="0" max="1" step="0.05" value="0.5"
+				 oninput="playerVol('gen', this.value)">
+		</div>
+	  </div>
+
+	  <div class="midi-viz" id="viz-gen"></div>
+	</div>
+
+    <div class="examples">
+      <p class="examples-title">Exemplos de descrição</p>
+      <div class="chips">
+        <button class="chip" onclick="setExample(this)">melodia alegre de primavera, notas rápidas e saltitantes</button>
+        <button class="chip" onclick="setExample(this)">balada triste em menor, ritmo de valsa lenta</button>
+        <button class="chip" onclick="setExample(this)">tema épico de batalha, dramático e crescente</button>
+        <button class="chip" onclick="setExample(this)">jazz noturno suave, improvisação relaxante</button>
+        <button class="chip" onclick="setExample(this)">música de ninar, delicada e repetitiva</button>
+        <button class="chip" onclick="setExample(this)">riff de rock pesado, energético e repetitivo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CARD 2: IMPORTAR JSON / MIDI -->
+  <div class="card card-import">
+    <div class="section-title">
+      📥 Importar MIDI / JSON
+      <span class="badge badge-new">NOVO</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.7">
+      Cole JSON de notas gerado por outro modelo de IA, ou faça upload de um arquivo .mid para visualizar no piano roll e baixar.
+    </p>
+
+    <div class="import-tabs">
+      <button class="tab-btn active" onclick="switchTab('json')">Colar JSON</button>
+      <button class="tab-btn" onclick="switchTab('upload')">Upload .mid</button>
+    </div>
+
+    <div class="tab-pane active" id="tab-json">
+      <label>JSON de notas</label>
+      <textarea id="json-input" placeholder='{"notas":[{"nota":60,"inicio":0,"duracao":960,"velocidade":85},{"nota":64,"inicio":960,"duracao":480,"velocidade":90},...]}&#10;&#10;Aceita campos em português (nota/inicio/duracao/velocidade) ou inglês (note/start/duration/velocity)'></textarea>
+      <div class="json-status" id="json-status"></div>
+      <div class="btn-row">
+        <button class="btn-main btn-import" onclick="importFromJSON()">IMPORTAR JSON</button>
+      </div>
+    </div>
+
+    <div class="tab-pane" id="tab-upload">
+      <label>Arquivo .mid</label>
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" id="midi-file" accept=".mid,.midi" onchange="handleMidiUpload(this)">
+        <div class="upload-icon">🎵</div>
+        <div class="upload-text">Arraste um .mid aqui ou clique para selecionar</div>
+        <div class="upload-loaded" id="upload-loaded"></div>
+      </div>
+    </div>
+
+    <div class="status-bar" id="status-import"></div>
+
+	<div class="result-section" id="result-import">
+	  <div class="result-header">
+		<span class="result-label">▸ midi importado</span>
+		<a id="dl-import" class="btn-dl btn-dl-import" download="importado.mid">⬇ download midi</a>
+	  </div>
+	  <canvas class="piano-roll" id="canvas-import"></canvas>
+
+	  <!-- PLAYER -->
+	  <div class="player-bar">
+		<button class="btn-play" id="btn-play-import"   onclick="playerToggle('import')">▶</button>
+		<button class="btn-stop-play"                   onclick="playerStop('import')">■</button>
+		<div class="player-seek-wrap" id="seek-import"  onclick="playerSeek('import', event)">
+		  <div class="player-seek-fill" id="fill-import"></div>
+		</div>
+		<span class="player-time" id="time-import">0:00</span>
+		<div class="player-vol">
+		  <span class="player-vol-icon">🔊</span>
+		  <input type="range" min="0" max="1" step="0.05" value="0.5"
+				 oninput="playerVol('import', this.value)">
+		</div>
+	  </div>
+
+	  <div class="midi-viz" id="viz-import"></div>
+	</div>
+  </div>
+
+</div>
+<script type="module" src="js/main-gerador.js"></script>
+</body>
+</html>
